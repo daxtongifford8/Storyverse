@@ -35,7 +35,7 @@ h1{font-size:clamp(36px,7vw,68px);line-height:.98;letter-spacing:-.055em;margin:
   <div class="divider"></div><h3 style="margin:0">What do you do?</h3><p class="muted" style="margin:4px 0 12px">Write any action you can imagine. The suggestions are just inspiration.</p>
   <div class="field"><label>YOUR CHARACTER</label><input id="actorname" disabled value="Your join name"></div>
   <div class="field" style="margin-top:10px"><label>YOUR ACTION</label><textarea id="action" placeholder="I climb onto the roof and look for a way into the clocktower..."></textarea></div>
-  <div class="choices" id="suggestions"></div>
+ <div class="choices" id="suggestions" style="display:none"></div>
   <div class="actions"><button onclick="submitAction()">Submit action ↗</button><button class="secondary" id="generateBtn" onclick="generateChapter()">Generate next chapter ✨</button><button class="secondary" onclick="resetStory()">End room</button></div>
   <p class="toast" id="gamemsg"></p>
  </div>
