@@ -25,6 +25,7 @@ h1{font-size:clamp(36px,7vw,68px);line-height:.98;letter-spacing:-.055em;margin:
  <button class="theme" data-theme="Heist Crew" onclick="pickTheme(this)"><span class="emoji">🗝️</span><strong>Heist Crew</strong><small>One impossible plan. One crew.</small></button>
  </div></div>
  <div class="section panel" id="setup"><h2>Build your story room</h2><div class="row"><div class="field"><label>ROOM NAME</label><input id="room" value="Friday Night Adventure"></div><div class="field"><label>YOUR NAME</label><input id="host" placeholder="Enter your character name"></div></div><div class="divider"></div><div class="field"><label>ADD YOUR FRIENDS' NAMES</label><input id="friends" placeholder="Josh, Hunter, Tyson..."><small class="muted">Separate names with commas. Friends can also be added when they join the room.</small></div><div class="row" style="margin-top:16px"><div class="field"><label>TURN STYLE</label><select id="turnmode"><option value="mixed">Mixed — group moves + individual moments</option><option value="group">Everyone submits an action, then story advances</option><option value="solo">One character at a time</option></select></div><div class="field"><label>STORY INTENSITY</label><select id="tone"><option>Epic & cinematic</option><option>Funny & chaotic</option><option>Dark & suspenseful</option><option>Lighthearted</option></select></div></div><div class="actions"><button onclick="startStory()">Create story room →</button></div><p class="toast" id="setupmsg"></p></div>
+<div class="section panel" id="joinpanel"><h2>Join a friend's room</h2><div class="row"><div class="field"><label>YOUR NAME</label><input id="joinname" placeholder="Your character name"></div><div class="field"><label>ROOM CODE</label><input id="joincode" placeholder="Enter room code" maxlength="6"></div></div><div class="actions"><button class="secondary" onclick="joinRoom()">Join room →</button></div><p class="toast" id="joinmsg"></p></div>
 </section>
 <section id="game" class="hidden">
  <div class="panel">
@@ -32,18 +33,23 @@ h1{font-size:clamp(36px,7vw,68px);line-height:.98;letter-spacing:-.055em;margin:
   <div class="divider"></div><div class="row" style="justify-content:space-between"><b>THE CREW</b><span class="muted" id="turnlabel">Mixed turns</span></div><div class="players" id="players"></div>
   <div class="divider"></div><div class="storybody" id="narrative"></div>
   <div class="divider"></div><h3 style="margin:0">What do you do?</h3><p class="muted" style="margin:4px 0 12px">Write any action you can imagine. The suggestions are just inspiration.</p>
-  <div class="field"><label>YOUR CHARACTER</label><select id="actor"></select></div>
+  <div class="field"><label>YOUR CHARACTER</label><input id="actorname" disabled value="Your join name"></div>
   <div class="field" style="margin-top:10px"><label>YOUR ACTION</label><textarea id="action" placeholder="I climb onto the roof and look for a way into the clocktower..."></textarea></div>
   <div class="choices" id="suggestions"></div>
-  <div class="actions"><button onclick="submitAction()">Submit action ↗</button><button class="secondary" onclick="advanceStory()">Continue story</button><button class="secondary" onclick="resetStory()">End room</button></div>
+  <div class="actions"><button onclick="submitAction()">Submit action ↗</button><button class="secondary" onclick="resetStory()">End room</button></div>
   <p class="toast" id="gamemsg"></p>
  </div>
  <div class="section panel"><div class="storyhead"><h2 style="margin:0">The shared timeline</h2><span class="pill">EVERY MOVE MATTERS</span></div><div class="feed" id="feed"><div class="muted">Your group's actions will appear here.</div></div></div>
- <div class="foot">Prototype mode: this demo saves the story in this browser only. Live shared rooms need an online database and hosting.</div>
+ <div class="foot">Live rooms: player lists and submitted actions sync across devices. Automatic AI storytelling is not connected yet.</div>
 </section>
 <div class="foot">STORYVERSE · A thousand possible stories. One crew.</div>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+const SUPABASE_URL="https://tsxnxnnfuhodiaqrqmep.supabase.co";
+const SUPABASE_KEY="sb_publishable_pw3-OLXBwP6ARHsfAjmhOQ_VAuZba0o";
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+let authUser=null,currentRoom=null,currentPlayer=null,liveChannel=null;
 let theme='Haunted Town',players=[],actions=[],chapter=1,scene=0,roomCode='';
 const scenes={
 'Haunted Town':[
@@ -56,7 +62,7 @@ const scenes={
 ['The Quiet Block','You make it outside. Smoke rises from the next block, and a child’s bicycle lies in the road. A rooftop signal flashes three times, pauses, then flashes twice.','Head for the rooftop signal','Check the nearby houses','Find a vehicle']
 ],
 'Fantasy Kingdom':[
-['The Crownless Road','A royal messenger collapses at your feet. In their hand is a map that changes whenever you look away. The king is dead, the throne is empty, and every kingdom has sent hunters after the same missing crown.','Help the messenger','Take the map','Hide from the approaching riders'],
+['The Crownless Road','A royal messenger collapses at your feet. In their hand is a map that changes whenever you look away. The king is dead, the throne is empty, and every kingdom has sent hunters after the same missing crown.','Help the messenger','Take the map','Hide from the approaching riders']],
 'Space Mystery':[
 ['Passenger Seven','Your ship drops out of warp above a silent planet. The crew manifest lists six people. The reflection in the observation window shows seven. The ship AI calmly announces: “Welcome back, captain.”','Question the ship AI','Search the passenger decks','Take a shuttle to the planet']
 ],
@@ -67,15 +73,78 @@ const scenes={
 ['The Impossible Job','A stranger slides a photograph across the table: a vault beneath a museum, guarded by a system that predicts every move. “The target isn’t money,” they say. “It’s the thing they stole from tomorrow.”','Study the blueprints','Question the stranger','Plan a distraction']
 ]};
 function pickTheme(el){document.querySelectorAll('.theme').forEach(x=>x.classList.remove('selected'));el.classList.add('selected');theme=el.dataset.theme}
-function showInfo(){alert('Pick a world, add your crew, then each player writes what they want to do. The storyteller uses the crew’s actions to shape the next scene. This prototype runs locally; shared live rooms are a next build step.')}
-function startStory(){let h=document.getElementById('host').value.trim();if(!h){document.getElementById('setupmsg').textContent='Add your character name to create the room.';return}players=[h,...document.getElementById('friends').value.split(',').map(x=>x.trim()).filter(Boolean)].filter((x,i,a)=>a.indexOf(x)===i);actions=[];chapter=1;scene=0;roomCode=Math.random().toString(36).slice(2,7).toUpperCase();document.getElementById('home').classList.add('hidden');document.getElementById('game').classList.remove('hidden');document.getElementById('roomcode').textContent='ROOM '+roomCode;document.getElementById('storytitle').textContent=scenes[theme][0][0];document.getElementById('turnlabel').textContent=document.getElementById('turnmode').selectedOptions[0].text;renderPlayers();renderScene();document.getElementById('game').scrollIntoView({behavior:'smooth'})}
-function renderPlayers(){document.getElementById('players').innerHTML=players.map((p,i)=>`<span class="player">${['✦','◆','●','▲','✧','⬟'][i%6]} ${esc(p)}</span>`).join('');document.getElementById('actor').innerHTML=players.map(p=>`<option>${esc(p)}</option>`).join('')}
+function showInfo(){alert('Pick a world, add your crew, then each player writes what they want to do. The storyteller uses the crew’s actions to shape the next scene. Players can join with the room code, and actions sync across devices.')}
+async function signIn(){
+ if(authUser)return authUser;
+ const {data,error}=await sb.auth.signInAnonymously();
+ if(error)throw error;authUser=data.user;return authUser;
+}
+function showGame(code){
+ document.getElementById('home').classList.add('hidden');
+ document.getElementById('game').classList.remove('hidden');
+ document.getElementById('roomcode').textContent='ROOM '+code;
+ document.getElementById('turnlabel').textContent=currentRoom.turn_mode||'Mixed';
+ renderScene();document.getElementById('game').scrollIntoView({behavior:'smooth'});
+}
+async function startStory(){
+ const name=document.getElementById('host').value.trim(),msg=document.getElementById('setupmsg');
+ if(!name){msg.textContent='Add your character name first.';return}
+ msg.textContent='Creating online room…';
+ try{
+  await signIn();
+  const {data,error}=await sb.rpc('create_room',{p_title:document.getElementById('room').value.trim()||'Adventure',p_theme:theme,p_tone:document.getElementById('tone').value,p_turn_mode:document.getElementById('turnmode').value,p_display_name:name});
+  if(error)throw error;
+  currentRoom={id:data.room_id,room_code:data.room_code,theme,turn_mode:document.getElementById('turnmode').value};
+  currentPlayer={id:data.player_id,display_name:name};roomCode=data.room_code;players=[name];actions=[];
+  showGame(roomCode);await refreshRoom();subscribeRoom();msg.textContent='';
+ }catch(e){msg.textContent='Could not create room: '+e.message}
+}
+async function joinRoom(){
+ const name=document.getElementById('joinname').value.trim(),code=document.getElementById('joincode').value.trim().toUpperCase(),msg=document.getElementById('joinmsg');
+ if(!name||!code){msg.textContent='Enter your name and room code.';return}
+ msg.textContent='Joining…';
+ try{
+  await signIn();
+  const {data,error}=await sb.rpc('join_room',{p_room_code:code,p_display_name:name});if(error)throw error;
+  currentPlayer={id:data.id,display_name:data.display_name};
+  const {data:room,error:re}=await sb.from('rooms').select('*').eq('id',data.room_id).single();if(re)throw re;
+  currentRoom=room;theme=room.theme;roomCode=room.room_code;showGame(roomCode);await refreshRoom();subscribeRoom();msg.textContent='';
+ }catch(e){msg.textContent='Could not join: '+e.message}
+}
+async function refreshRoom(){
+ const [{data:ps,error:pe},{data:es,error:ee}]=await Promise.all([
+  sb.from('players').select('id,display_name,is_host').eq('room_id',currentRoom.id).order('joined_at'),
+  sb.from('story_events').select('id,player_id,action').eq('room_id',currentRoom.id).order('id')
+ ]);
+ if(pe)throw pe;if(ee)throw ee;
+ players=ps.map(p=>p.display_name);
+ actions=es.map(e=>({who:ps.find(p=>p.id===e.player_id)?.display_name||'Player',what:e.action}));
+ renderPlayers();renderFeed();
+}
+function subscribeRoom(){
+ if(liveChannel)sb.removeChannel(liveChannel);
+ liveChannel=sb.channel('room-'+currentRoom.id)
+ .on('postgres_changes',{event:'*',schema:'public',table:'players',filter:'room_id=eq.'+currentRoom.id},()=>refreshRoom().catch(console.error))
+ .on('postgres_changes',{event:'*',schema:'public',table:'story_events',filter:'room_id=eq.'+currentRoom.id},()=>refreshRoom().catch(console.error))
+ .subscribe();
+}
+function renderPlayers(){
+ document.getElementById('players').innerHTML=players.map((p,i)=>`<span class="player">${['✦','◆','●','▲','✧','⬟'][i%6]} ${esc(p)}</span>`).join('');
+ document.getElementById('actorname').value=currentPlayer?.display_name||'You';
+}
 function renderScene(){let s=scenes[theme][Math.min(scene,scenes[theme].length-1)];document.getElementById('chapter').textContent='CHAPTER '+String(chapter).padStart(2,'0')+' · '+(scene===0?'THE BEGINNING':'THE CONSEQUENCES');document.getElementById('storytitle').textContent=s[0];document.getElementById('narrative').textContent=s[1];document.getElementById('suggestions').innerHTML=s.slice(2).map(t=>`<button onclick="useSuggestion('${esc(t).replaceAll("'","&#39;")}')">${esc(t)} →</button>`).join('')}
 function useSuggestion(t){document.getElementById('action').value=t}
-function submitAction(){let who=document.getElementById('actor').value,what=document.getElementById('action').value.trim();if(!what){document.getElementById('gamemsg').textContent='Write your action first—or pick an idea.';return}actions.push({who,what});document.getElementById('action').value='';document.getElementById('gamemsg').textContent=who+'’s action has been added to the shared timeline.';renderFeed()}
+async function submitAction(){
+ const what=document.getElementById('action').value.trim();
+ if(!what){document.getElementById('gamemsg').textContent='Write your action first—or pick an idea.';return}
+ if(!currentRoom||!currentPlayer)return;
+ const {error}=await sb.from('story_events').insert({room_id:currentRoom.id,player_id:currentPlayer.id,action:what,turn_number:chapter});
+ if(error){document.getElementById('gamemsg').textContent='Could not send action: '+error.message;return}
+ document.getElementById('action').value='';document.getElementById('gamemsg').textContent='Your action was shared with the room!';await refreshRoom();
+}
 function renderFeed(){document.getElementById('feed').innerHTML=actions.length?actions.map(a=>`<div class="event"><b>${esc(a.who)}</b> · ${esc(a.what)}</div>`).join(''):'<div class="muted">Your group’s actions will appear here.</div>'}
 function advanceStory(){if(!actions.length){document.getElementById('gamemsg').textContent='Someone needs to act before the story moves forward.';return}let s=scenes[theme],last=s[Math.min(scene,s.length-1)];let recap=actions.map(a=>a.who+' '+a.what).join('; ');let old=document.getElementById('narrative').textContent;let nextIndex=Math.min(scene+1,s.length-1);scene=nextIndex;chapter++;renderScene();document.getElementById('narrative').textContent+='\\n\\nThe group’s choices begin to collide: '+recap+'. The world reacts. A new possibility opens, but the consequences of your actions are not yet clear.';actions=[];renderFeed();document.getElementById('gamemsg').textContent='The next scene has begun. Keep pushing the story forward.'}
-function copyInvite(){let t='Join our STORYVERSE adventure! Theme: '+theme+'. Room code: '+roomCode+'. This prototype is running in my browser; use the same device to play this demo.';if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>document.getElementById('gamemsg').textContent='Invite text copied!');else alert(t)}
-function resetStory(){document.getElementById('game').classList.add('hidden');document.getElementById('home').classList.remove('hidden');document.getElementById('home').scrollIntoView({behavior:'smooth'})}
+function copyInvite(){let t='Join our STORYVERSE adventure! Theme: '+theme+'. Room code: '+roomCode+'. Open https://storyverse-henna.vercel.app/ and enter this code to join our live room.';if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>document.getElementById('gamemsg').textContent='Invite text copied!');else alert(t)}
+function resetStory(){if(liveChannel){sb.removeChannel(liveChannel);liveChannel=null}currentRoom=null;currentPlayer=null;document.getElementById('game').classList.add('hidden');document.getElementById('home').classList.remove('hidden');document.getElementById('home').scrollIntoView({behavior:'smooth'})}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 </script></body></html>
